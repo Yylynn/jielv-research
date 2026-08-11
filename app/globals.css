@@ -73,8 +73,10 @@ nav em { font-style: normal; font-size: 8px; padding: 2px 4px; border-radius: 8p
 .ohlc strong { color: #a5b5af; font-family: ui-monospace, monospace; font-weight: 400; margin-left: 3px; }
 
 .filter-bar { min-height: 62px; display: flex; align-items: center; gap: 16px; padding: 10px 20px; border-bottom: 1px solid var(--line); background: linear-gradient(90deg, rgba(207, 255, 93, .035), transparent 42%); }
+.filter-bar.collapsed { min-height: 46px; background: rgba(7, 16, 13, .65); }
 .filter-title { display: flex; align-items: center; gap: 7px; color: #aabbb5; font-size: 10px; letter-spacing: .08em; white-space: nowrap; }
 .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--acid); box-shadow: 0 0 10px var(--acid); }
+.pulse.inactive { background: #53665f; box-shadow: none; }
 .select-group { display: flex; align-items: flex-end; gap: 7px; }
 .select-group label { color: #61746d; font-size: 8px; }
 .select-group select { display: block; width: 82px; height: 30px; margin-top: 4px; padding: 0 8px; border: 1px solid rgba(155, 181, 170, .2); outline: 0; background: #091410; color: #e1ede8; font-size: 11px; }
@@ -82,6 +84,12 @@ nav em { font-style: normal; font-size: 8px; padding: 2px 4px; border-radius: 8p
 .range-arrow { color: #65766f; margin-bottom: 7px; }
 .apply-button { height: 30px; border: 1px solid var(--acid); padding: 0 14px; background: var(--acid); color: #10170f; font-size: 10px; font-weight: 650; cursor: pointer; box-shadow: 0 0 16px rgba(207, 255, 93, .12); }
 .apply-button:hover { filter: brightness(1.08); }
+.filter-launch, .filter-cancel, .filter-edit, .filter-close { border: 1px solid var(--line); background: #0a1612; color: #82958e; font-size: 9px; cursor: pointer; }
+.filter-launch { height: 29px; padding: 0 12px; }
+.filter-launch:hover, .filter-edit:hover, .filter-close:hover { color: var(--acid); border-color: rgba(207, 255, 93, .32); }
+.filter-cancel { height: 30px; padding: 0 10px; }
+.filter-edit { height: 29px; padding: 0 11px; }
+.filter-close { width: 29px; height: 29px; font-size: 14px; }
 .match-summary { margin-left: auto; text-align: right; }
 .match-summary strong, .match-summary span { display: block; }
 .match-summary strong { color: #dce9e4; font-size: 10px; font-weight: 520; }
@@ -99,7 +107,8 @@ nav em { font-style: normal; font-size: 8px; padding: 2px 4px; border-radius: 8p
 .view-switch .active { color: var(--acid); background: #13201a; }
 
 .chart-stage { min-height: 430px; position: relative; overflow: hidden; outline: none; }
-.chart-stage canvas { display: block; outline: none; cursor: crosshair; }
+.chart-stage canvas { display: block; outline: none; cursor: crosshair; touch-action: none; user-select: none; }
+.chart-stage.dragging canvas { cursor: grabbing; }
 .market-tooltip { position: absolute; z-index: 12; width: 474px; border: 1px solid rgba(176, 199, 190, .24); background: rgba(7, 15, 13, .97); box-shadow: 0 16px 50px rgba(0, 0, 0, .5); backdrop-filter: blur(14px); }
 .tooltip-head { display: flex; justify-content: space-between; align-items: center; padding: 11px 13px 9px; border-bottom: 1px solid var(--line); }
 .tooltip-head strong, .tooltip-head span { display: block; }
@@ -119,7 +128,7 @@ nav em { font-style: normal; font-size: 8px; padding: 2px 4px; border-radius: 8p
 .detail-row strong { color: #d7e4df; font-weight: 500; }
 .chart-status { height: 35px; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; border-top: 1px solid var(--line); color: #5d7069; font-size: 8px; }
 .chart-status span { display: flex; align-items: center; gap: 7px; }
-.status-box { width: 11px; height: 7px; border: 1px solid var(--acid); background: rgba(207, 255, 93, .08); box-shadow: 0 0 6px rgba(207, 255, 93, .25); }
+.status-box { width: 6px; height: 12px; border: 1px solid var(--acid); background: transparent; box-shadow: 0 0 6px rgba(207, 255, 93, .42); }
 
 .right-panel { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .today-card, .calendar-card, .saved-card { border: 1px solid var(--line); background: linear-gradient(150deg, rgba(14, 30, 24, .86), rgba(7, 16, 13, .95)); }

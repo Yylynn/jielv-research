@@ -141,24 +141,32 @@ function MarketChart({
   data,
   startGanzhi,
   endGanzhi,
+  filterEnabled,
   viewCount,
   viewportEnd,
   selectedIndex,
   onSelect,
+  onViewportChange,
+  onResetView,
 }: {
   data: Candle[];
   startGanzhi: number;
   endGanzhi: number;
+  filterEnabled: boolean;
   viewCount: number;
   viewportEnd: number;
   selectedIndex: number | null;
   onSelect: (index: number | null) => void;
+  onViewportChange: (viewCount: number, viewportEnd: number) => void;
+  onResetView: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 1000, height: 510 });
   const [tooltip, setTooltip] = useState({ x: 0, y: 0 });
   const [activeDetail, setActiveDetail] = useState<DetailKey>("date");
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<{ startX: number; startEnd: number; moved: boolean } | null>(null);
 
   const startIndex = Math.max(0, viewportEnd - viewCount + 1);
   const visible = data.slice(startIndex, viewportEnd + 1);
@@ -212,29 +220,6 @@ function MarketChart({
       ctx.fillText(price.toFixed(0), size.width - pad.right + 18, y + 4);
     }
 
-    let segmentStart = -1;
-    visible.forEach((item, index) => {
-      const matched = isInGanzhiRange(item.ganzhiIndex, startGanzhi, endGanzhi);
-      if (matched && segmentStart < 0) segmentStart = index;
-      const next = index < visible.length - 1
-        ? isInGanzhiRange(visible[index + 1].ganzhiIndex, startGanzhi, endGanzhi)
-        : false;
-      if (matched && !next) {
-        const left = pad.left + segmentStart * xStep + 1;
-        const width = Math.max(xStep * (index - segmentStart + 1) - 2, 3);
-        ctx.save();
-        ctx.fillStyle = "rgba(196, 255, 86, 0.075)";
-        ctx.strokeStyle = "rgba(207, 255, 93, 0.92)";
-        ctx.lineWidth = 1.4;
-        ctx.shadowColor = "rgba(207, 255, 93, 0.45)";
-        ctx.shadowBlur = 8;
-        ctx.fillRect(left, pad.top - 9, width, plotHeight + 18);
-        ctx.strokeRect(left, pad.top - 9, width, plotHeight + 18);
-        ctx.restore();
-        segmentStart = -1;
-      }
-    });
-
     visible.forEach((item, index) => {
       const centerX = pad.left + index * xStep + xStep / 2;
       const up = item.close >= item.open;
@@ -252,6 +237,25 @@ function MarketChart({
       if (up) ctx.fillRect(centerX - bodyWidth / 2, bodyTop, bodyWidth, bodyHeight);
       else {
         ctx.strokeRect(centerX - bodyWidth / 2, bodyTop, bodyWidth, bodyHeight);
+      }
+
+      if (filterEnabled && isInGanzhiRange(item.ganzhiIndex, startGanzhi, endGanzhi)) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(207, 255, 93, 0.96)";
+        ctx.lineWidth = Math.max(1, Math.min(1.8, xStep * 0.16));
+        ctx.shadowColor = "rgba(207, 255, 93, 0.82)";
+        ctx.shadowBlur = 7;
+        ctx.beginPath();
+        ctx.moveTo(centerX, yFor(item.high) - 1);
+        ctx.lineTo(centerX, yFor(item.low) + 1);
+        ctx.stroke();
+        ctx.strokeRect(
+          centerX - bodyWidth / 2 - 1.5,
+          bodyTop - 1.5,
+          bodyWidth + 3,
+          bodyHeight + 3,
+        );
+        ctx.restore();
       }
     });
 
@@ -281,7 +285,7 @@ function MarketChart({
       const x = pad.left + dataIndex * xStep;
       ctx.fillText(`${item.date.getFullYear()}.${String(item.date.getMonth() + 1).padStart(2, "0")}`, x, size.height - 16);
     }
-  }, [data, endGanzhi, selectedIndex, size, startGanzhi, startIndex, viewportEnd, visible]);
+  }, [data, endGanzhi, filterEnabled, selectedIndex, size, startGanzhi, startIndex, viewportEnd, visible]);
 
   useEffect(() => draw(), [draw]);
 
@@ -297,6 +301,33 @@ function MarketChart({
       x: Math.min(Math.max(clientX - bounds.left + 14, 20), bounds.width - 510),
       y: Math.min(Math.max(clientY - bounds.top + 14, 14), bounds.height - 260),
     });
+  };
+
+  const zoomAt = (clientX: number, deltaY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const bounds = canvas.getBoundingClientRect();
+    const plotLeft = bounds.left + 18;
+    const plotWidth = Math.max(1, bounds.width - 18 - 70);
+    const anchorRatio = Math.max(0, Math.min(1, (clientX - plotLeft) / plotWidth));
+    const anchorIndex = startIndex + anchorRatio * Math.max(1, viewCount - 1);
+    const scale = Math.exp(deltaY * 0.00125);
+    const nextCount = Math.max(24, Math.min(data.length, Math.round(viewCount * scale)));
+    let nextStart = Math.round(anchorIndex - anchorRatio * Math.max(1, nextCount - 1));
+    nextStart = Math.max(0, Math.min(data.length - nextCount, nextStart));
+    onViewportChange(nextCount, nextStart + nextCount - 1);
+  };
+
+  const panTo = (clientX: number) => {
+    const drag = dragRef.current;
+    const canvas = canvasRef.current;
+    if (!drag || !canvas) return;
+    const plotWidth = Math.max(1, canvas.getBoundingClientRect().width - 18 - 70);
+    const candleWidth = plotWidth / Math.max(1, viewCount);
+    const candleDelta = Math.round((clientX - drag.startX) / candleWidth);
+    if (Math.abs(clientX - drag.startX) > 3) drag.moved = true;
+    const nextEnd = Math.max(viewCount - 1, Math.min(data.length - 1, drag.startEnd - candleDelta));
+    onViewportChange(viewCount, nextEnd);
   };
 
   const selected = selectedIndex === null ? null : data[selectedIndex];
@@ -333,9 +364,11 @@ function MarketChart({
 
   return (
     <div
-      className="chart-stage"
+      className={`chart-stage ${isDragging ? "dragging" : ""}`}
       ref={containerRef}
-      onMouseLeave={() => onSelect(null)}
+      onMouseLeave={() => {
+        if (!isDragging) onSelect(null);
+      }}
       onKeyDown={(event) => {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
         event.preventDefault();
@@ -346,9 +379,37 @@ function MarketChart({
       <canvas
         ref={canvasRef}
         tabIndex={0}
-        aria-label="沪深300日K线，移动鼠标查看行情与传统历法"
-        onMouseMove={(event) => locate(event.clientX, event.clientY)}
-        onClick={(event) => locate(event.clientX, event.clientY)}
+        aria-label="沪深300日K线，可滚轮缩放、拖拽平移，移动鼠标查看行情与传统历法"
+        onWheel={(event) => {
+          event.preventDefault();
+          zoomAt(event.clientX, event.deltaY);
+        }}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          dragRef.current = { startX: event.clientX, startEnd: viewportEnd, moved: false };
+          setIsDragging(true);
+          onSelect(null);
+        }}
+        onPointerMove={(event) => {
+          if (dragRef.current) panTo(event.clientX);
+          else locate(event.clientX, event.clientY);
+        }}
+        onPointerUp={(event) => {
+          const drag = dragRef.current;
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+          dragRef.current = null;
+          setIsDragging(false);
+          if (drag && !drag.moved) locate(event.clientX, event.clientY);
+        }}
+        onPointerCancel={() => {
+          dragRef.current = null;
+          setIsDragging(false);
+        }}
+        onDoubleClick={() => {
+          onSelect(null);
+          onResetView();
+        }}
       />
       {selected && details[activeDetail] && (
         <div className="market-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
@@ -396,6 +457,7 @@ function MiniCalendar({
   selected,
   startGanzhi,
   endGanzhi,
+  filterEnabled,
   onChangeMonth,
   onPick,
 }: {
@@ -403,6 +465,7 @@ function MiniCalendar({
   selected: Date | null;
   startGanzhi: number;
   endGanzhi: number;
+  filterEnabled: boolean;
   onChangeMonth: (offset: number) => void;
   onPick: (date: Date) => void;
 }) {
@@ -428,7 +491,7 @@ function MiniCalendar({
         {cells.map((date, index) => {
           if (!date) return <span className="day-cell empty" key={`empty-${index}`} />;
           const indexOfGanzhi = ganzhiIndexForDate(date);
-          const matched = isInGanzhiRange(indexOfGanzhi, startGanzhi, endGanzhi);
+          const matched = filterEnabled && isInGanzhiRange(indexOfGanzhi, startGanzhi, endGanzhi);
           const isSelected = selected && toIso(selected) === toIso(date);
           const weekend = date.getDay() === 0 || date.getDay() === 6;
           return (
@@ -444,7 +507,7 @@ function MiniCalendar({
           );
         })}
       </div>
-      <div className="calendar-legend"><span><i />命中区间</span><span><i className="trade" />交易日</span></div>
+      <div className="calendar-legend">{filterEnabled && <span><i />命中区间</span>}<span><i className="trade" />交易日</span></div>
     </section>
   );
 }
@@ -454,13 +517,18 @@ export default function Home() {
   const [draftStart, setDraftStart] = useState(0);
   const [draftEnd, setDraftEnd] = useState(10);
   const [range, setRange] = useState({ start: 0, end: 10 });
+  const [filterMode, setFilterMode] = useState<"closed" | "editing" | "active">("closed");
   const [viewKey, setViewKey] = useState("1年");
+  const [visibleCount, setVisibleCount] = useState(Math.min(VIEW_COUNTS["1年"], data.length));
   const [viewportEnd, setViewportEnd] = useState(data.length - 1);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(new Date(2026, 7, 1));
 
-  const segments = useMemo(() => buildSegments(data, range.start, range.end), [data, range]);
-  const visibleCount = Math.min(VIEW_COUNTS[viewKey], data.length);
+  const filterEnabled = filterMode === "active";
+  const segments = useMemo(
+    () => filterEnabled ? buildSegments(data, range.start, range.end) : [],
+    [data, filterEnabled, range],
+  );
   const currentSegment = segments.findIndex((segment) => viewportEnd >= segment.start && viewportEnd <= segment.end + visibleCount / 2);
   const latest = data[data.length - 1];
   const previous = data[data.length - 2];
@@ -473,6 +541,13 @@ export default function Home() {
     const segment = segments[next];
     setViewportEnd(Math.min(data.length - 1, segment.end + Math.floor(visibleCount * 0.45)));
     setSelectedIndex(segment.start);
+  };
+
+  const selectView = (key: string) => {
+    setViewKey(key);
+    setVisibleCount(Math.min(VIEW_COUNTS[key], data.length));
+    setViewportEnd(data.length - 1);
+    setSelectedIndex(null);
   };
 
   const pickCalendarDate = (date: Date) => {
@@ -531,33 +606,55 @@ export default function Home() {
             <div className="ohlc"><span>开 <strong>{latest.open.toFixed(2)}</strong></span><span>高 <strong>{latest.high.toFixed(2)}</strong></span><span>低 <strong>{latest.low.toFixed(2)}</strong></span><span>量 <strong>{latest.volume.toFixed(1)}亿</strong></span></div>
           </div>
 
-          <div className="filter-bar">
-            <div className="filter-title"><span className="pulse" />日柱区间</div>
-            <div className="select-group">
-              <label>起点<select value={draftStart} onChange={(event) => setDraftStart(Number(event.target.value))}>{GANZHI.map((item, index) => <option value={index} key={item}>{item}</option>)}</select></label>
-              <span className="range-arrow">→</span>
-              <label>终点<select value={draftEnd} onChange={(event) => setDraftEnd(Number(event.target.value))}>{GANZHI.map((item, index) => <option value={index} key={item}>{item}</option>)}</select></label>
-              <button className="apply-button" onClick={() => setRange({ start: draftStart, end: draftEnd })}>应用筛选</button>
-            </div>
-            <div className="match-summary"><strong>{GANZHI[range.start]} → {GANZHI[range.end]}</strong><span>命中 {segments.length} 段</span></div>
-            <div className="segment-nav"><button onClick={() => navigateSegment(-1)} aria-label="上一段">‹</button><button onClick={() => navigateSegment(1)} aria-label="下一段">›</button></div>
+          <div className={`filter-bar ${filterMode === "closed" ? "collapsed" : ""}`}>
+            <div className="filter-title"><span className={`pulse ${filterEnabled ? "" : "inactive"}`} />日柱区间</div>
+            {filterMode === "closed" && (
+              <button className="filter-launch" onClick={() => setFilterMode("editing")}>＋ 选择日柱区间</button>
+            )}
+            {filterMode === "editing" && (
+              <div className="select-group">
+                <label>起点<select value={draftStart} onChange={(event) => setDraftStart(Number(event.target.value))}>{GANZHI.map((item, index) => <option value={index} key={item}>{item}</option>)}</select></label>
+                <span className="range-arrow">→</span>
+                <label>终点<select value={draftEnd} onChange={(event) => setDraftEnd(Number(event.target.value))}>{GANZHI.map((item, index) => <option value={index} key={item}>{item}</option>)}</select></label>
+                <button className="apply-button" onClick={() => { setRange({ start: draftStart, end: draftEnd }); setFilterMode("active"); }}>应用筛选</button>
+                <button className="filter-cancel" onClick={() => setFilterMode("closed")}>取消</button>
+              </div>
+            )}
+            {filterMode === "active" && (
+              <>
+                <div className="match-summary"><strong>{GANZHI[range.start]} → {GANZHI[range.end]}</strong><span>命中 {segments.length} 段</span></div>
+                <div className="segment-nav"><button onClick={() => navigateSegment(-1)} aria-label="上一段">‹</button><button onClick={() => navigateSegment(1)} aria-label="下一段">›</button></div>
+                <button className="filter-edit" onClick={() => setFilterMode("editing")}>修改</button>
+                <button className="filter-close" onClick={() => { setFilterMode("closed"); setSelectedIndex(null); }} aria-label="关闭日柱筛选">×</button>
+              </>
+            )}
           </div>
 
           <div className="chart-toolbar">
             <div><button className="tool-active">K线</button><button>分时</button><span className="divider" /><button>MA</button><button>VOL</button></div>
-            <div className="view-switch">{Object.keys(VIEW_COUNTS).map((key) => <button className={viewKey === key ? "active" : ""} onClick={() => setViewKey(key)} key={key}>{key}</button>)}</div>
+            <div className="view-switch">{Object.keys(VIEW_COUNTS).map((key) => <button className={viewKey === key ? "active" : ""} onClick={() => selectView(key)} key={key}>{key}</button>)}</div>
           </div>
 
           <MarketChart
             data={data}
             startGanzhi={range.start}
             endGanzhi={range.end}
+            filterEnabled={filterEnabled}
             viewCount={visibleCount}
             viewportEnd={viewportEnd}
             selectedIndex={selectedIndex}
             onSelect={setSelectedIndex}
+            onViewportChange={(count, end) => {
+              setViewKey("");
+              setVisibleCount(count);
+              setViewportEnd(end);
+            }}
+            onResetView={() => selectView("1年")}
           />
-          <div className="chart-status"><span><i className="status-box" />荧光框：{GANZHI[range.start]}日至{GANZHI[range.end]}日柱区间</span><span>移动鼠标查看行情与历法详情</span></div>
+          <div className="chart-status">
+            <span>{filterEnabled ? <><i className="status-box" />荧光描边：{GANZHI[range.start]}日至{GANZHI[range.end]}日柱区间</> : "尚未启用日柱筛选"}</span>
+            <span>滚轮缩放 · 拖拽平移 · 双击复位</span>
+          </div>
         </section>
 
         <aside className="right-panel">
@@ -571,6 +668,7 @@ export default function Home() {
             selected={selectedIndex === null ? null : data[selectedIndex].date}
             startGanzhi={range.start}
             endGanzhi={range.end}
+            filterEnabled={filterEnabled}
             onChangeMonth={(offset) => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + offset, 1))}
             onPick={pickCalendarDate}
           />
