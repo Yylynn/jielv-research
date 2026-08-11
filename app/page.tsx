@@ -282,7 +282,7 @@ function MarketChart({
     startX: number;
     startEnd: number;
     moved: boolean;
-    pinnedIndex: number | null;
+    wasPinned: boolean;
   } | null>(null);
   const tooltipIndexRef = useRef<number | null>(null);
 
@@ -528,7 +528,7 @@ function MarketChart({
             startX: event.clientX,
             startEnd: viewportEnd,
             moved: false,
-            pinnedIndex: isTooltipPinned ? selectedIndex : null,
+            wasPinned: isTooltipPinned,
           };
           setIsDragging(true);
         }}
@@ -542,12 +542,12 @@ function MarketChart({
           dragRef.current = null;
           setIsDragging(false);
           if (drag && !drag.moved) {
-            const clickedIndex = locate(event.clientX, event.clientY);
-            if (drag.pinnedIndex !== null && drag.pinnedIndex === clickedIndex) {
+            if (drag.wasPinned) {
               setIsTooltipPinned(false);
               tooltipIndexRef.current = null;
               onSelect(null);
             } else {
+              locate(event.clientX, event.clientY);
               setIsTooltipPinned(true);
             }
           }
@@ -571,7 +571,7 @@ function MarketChart({
               <span>
                 {WEEKDAYS[selected.date.getDay()]} · {GANZHI[selected.ganzhiIndex]}日
                 <em className={isTooltipPinned ? "tooltip-lock active" : "tooltip-lock"}>
-                  {isTooltipPinned ? "已锁定 · 再次点击取消" : "点击K线锁定"}
+                  {isTooltipPinned ? "已锁定 · 单击图表取消" : "点击K线锁定"}
                 </em>
               </span>
             </div>
