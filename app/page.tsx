@@ -18,6 +18,30 @@ type Candle = {
   ganzhiIndex: number;
 };
 
+type MarketDataset = {
+  symbol: string;
+  name: string;
+  source: string;
+  volumeUnit: string;
+  mode: "live" | "static" | "demo";
+  candles: Candle[];
+};
+
+type RawMarketDataset = {
+  symbol?: string;
+  name?: string;
+  source?: string;
+  volumeUnit?: string;
+  candles?: Array<{
+    date: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+  }>;
+};
+
 type DetailKey = "date" | "pillars" | "elements" | "term" | "lunar";
 
 function toIso(date: Date) {
@@ -108,6 +132,54 @@ function createMarketData() {
     cursor.setDate(cursor.getDate() + 1);
   }
   return result;
+}
+
+function normalizeMarketDataset(raw: RawMarketDataset, mode: "live" | "static"): MarketDataset {
+  const candles = (raw.candles ?? [])
+    .map((item) => {
+      const date = new Date(`${item.date}T00:00:00`);
+      return {
+        date,
+        open: Number(item.open),
+        high: Number(item.high),
+        low: Number(item.low),
+        close: Number(item.close),
+        volume: Number(item.volume),
+        ganzhiIndex: ganzhiIndexForDate(date),
+      };
+    })
+    .filter((item) => (
+      !Number.isNaN(item.date.getTime())
+      && [item.open, item.high, item.low, item.close, item.volume].every(Number.isFinite)
+    ))
+    .sort((left, right) => left.date.getTime() - right.date.getTime());
+  if (candles.length < 2) throw new Error("行情数据不足");
+  return {
+    symbol: raw.symbol ?? "000300.SH",
+    name: raw.name ?? "沪深300",
+    source: raw.source ?? "真实行情",
+    volumeUnit: raw.volumeUnit ?? "",
+    mode,
+    candles,
+  };
+}
+
+async function loadMarketDataset(): Promise<MarketDataset> {
+  const apiRoot = import.meta.env.VITE_MARKET_API_URL?.replace(/\/$/, "");
+  const sources: Array<{ url: string; mode: "live" | "static" }> = [];
+  if (apiRoot) sources.push({ url: `${apiRoot}/api/market/daily`, mode: "live" });
+  sources.push({ url: `${import.meta.env.BASE_URL}data/market_daily.json`, mode: "static" });
+
+  for (const source of sources) {
+    try {
+      const response = await fetch(source.url, { cache: source.mode === "live" ? "no-store" : "default" });
+      if (!response.ok) continue;
+      return normalizeMarketDataset(await response.json() as RawMarketDataset, source.mode);
+    } catch {
+      // Continue to the next source; the interface always retains its demo fallback.
+    }
+  }
+  throw new Error("没有可用的真实行情数据");
 }
 
 function isInGanzhiRange(index: number, start: number, end: number) {
@@ -541,7 +613,15 @@ function MiniCalendar({
 }
 
 export default function Home() {
-  const data = useMemo(() => createMarketData(), []);
+  const [market, setMarket] = useState<MarketDataset>(() => ({
+    symbol: "000300.SH",
+    name: "沪深300",
+    source: "演示数据",
+    volumeUnit: "亿",
+    mode: "demo",
+    candles: createMarketData(),
+  }));
+  const data = market.candles;
   const [draftStart, setDraftStart] = useState(0);
   const [draftEnd, setDraftEnd] = useState(10);
   const [range, setRange] = useState({ start: 0, end: 10 });
@@ -551,6 +631,23 @@ export default function Home() {
   const [viewportEnd, setViewportEnd] = useState(data.length - 1);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(new Date(2026, 7, 1));
+
+  useEffect(() => {
+    let cancelled = false;
+    loadMarketDataset().then((dataset) => {
+      if (!cancelled) setMarket(dataset);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    setViewKey("1年");
+    setVisibleCount(Math.min(VIEW_COUNTS["1年"], data.length));
+    setViewportEnd(data.length - 1);
+    setSelectedIndex(null);
+    const latestDate = data[data.length - 1]?.date;
+    if (latestDate) setCalendarMonth(new Date(latestDate.getFullYear(), latestDate.getMonth(), 1));
+  }, [data]);
 
   const filterEnabled = filterMode === "active";
   const segments = useMemo(
@@ -617,7 +714,7 @@ export default function Home() {
           <label className="market-search"><span>⌕</span><input aria-label="搜索标的" placeholder="代码 / 名称" /></label>
           <div className="watch-tabs"><button className="active">指数</button><button>股票</button><button>期货</button></div>
           {[
-            ["沪深300", "000300", latest.close, change],
+            [market.name, market.symbol.replace(/\.(SH|SZ)$/i, ""), latest.close, change],
             ["上证指数", "000001", 3647.21, 0.42],
             ["深证成指", "399001", 11218.09, -0.31],
             ["中证500", "000905", 6017.54, 0.86],
@@ -628,14 +725,14 @@ export default function Home() {
               <span className={Number(rate) >= 0 ? "quote-up" : "quote-down"}><strong>{Number(price).toFixed(2)}</strong><small>{Number(rate) >= 0 ? "+" : ""}{Number(rate).toFixed(2)}%</small></span>
             </button>
           ))}
-          <div className="watch-note"><span>●</span><p>当前为产品交互演示<br />行情使用模拟日线数据</p></div>
+          <div className="watch-note"><span>●</span><p>当前数据源：{market.source}<br />{market.mode === "live" ? "本机研究接口" : market.mode === "static" ? "每日静态行情" : "行情尚未导入"}</p></div>
         </aside>
 
         <section className="main-panel">
           <div className="instrument-row">
-            <div className="instrument-title"><span className="market-badge">CSI</span><div><h1>沪深300 <small>000300</small></h1><p>日线 · 前复权 · 模拟行情</p></div></div>
+            <div className="instrument-title"><span className="market-badge">CSI</span><div><h1>{market.name} <small>{market.symbol.replace(/\.(SH|SZ)$/i, "")}</small></h1><p>日线 · {market.mode === "live" ? "本机实时同步" : market.mode === "static" ? "每日更新" : "演示行情"} · {market.source}</p></div></div>
             <div className="headline-quote"><strong className={change >= 0 ? "quote-up" : "quote-down"}>{latest.close.toFixed(2)}</strong><span className={change >= 0 ? "quote-up" : "quote-down"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span></div>
-            <div className="ohlc"><span>开 <strong>{latest.open.toFixed(2)}</strong></span><span>高 <strong>{latest.high.toFixed(2)}</strong></span><span>低 <strong>{latest.low.toFixed(2)}</strong></span><span>量 <strong>{latest.volume.toFixed(1)}亿</strong></span></div>
+            <div className="ohlc"><span>开 <strong>{latest.open.toFixed(2)}</strong></span><span>高 <strong>{latest.high.toFixed(2)}</strong></span><span>低 <strong>{latest.low.toFixed(2)}</strong></span><span>量 <strong>{latest.volume.toFixed(1)}{market.volumeUnit}</strong></span></div>
           </div>
 
           <div className={`filter-bar ${filterMode === "closed" ? "collapsed" : ""}`}>
