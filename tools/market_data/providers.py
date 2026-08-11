@@ -5,6 +5,7 @@ from datetime import datetime
 from getpass import getpass
 import os
 from pathlib import Path
+import re
 from typing import Iterable
 
 from .schema import DailyBar, normalize_date
@@ -94,6 +95,135 @@ def load_wind_daily(
             )
         )
     return bars
+
+
+def load_akshare_daily(
+    symbol: str,
+    start: str,
+    end: str,
+    volume_divisor: float = 100_000_000.0,
+) -> list[DailyBar]:
+    """Load Chinese index daily bars through AKShare's public-data adapters."""
+    try:
+        import akshare as ak  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise RuntimeError("AKShare is unavailable. Install it with: pip install akshare") from exc
+
+    normalized_symbol = symbol.strip().lower()
+    wind_style = re.fullmatch(r"(\d{6})\.(sh|sz|bj)", normalized_symbol)
+    if wind_style:
+        normalized_symbol = f"{wind_style.group(2)}{wind_style.group(1)}"
+    if not re.fullmatch(r"(?:sh|sz|bj)\d{6}", normalized_symbol):
+        raise ValueError(
+            "AKShare index symbol must look like sh000300, sz399001, or 000300.SH"
+        )
+
+    start_date = datetime.fromisoformat(start).date()
+    end_date = datetime.fromisoformat(end).date()
+    try:
+        frame = ak.stock_zh_index_daily(symbol=normalized_symbol)
+    except Exception as sina_error:
+        try:
+            frame = ak.stock_zh_index_daily_em(
+                symbol=normalized_symbol,
+                start_date=start_date.strftime("%Y%m%d"),
+                end_date=end_date.strftime("%Y%m%d"),
+            )
+        except Exception as eastmoney_error:
+            raise RuntimeError(
+                "AKShare index sources are temporarily unavailable: "
+                f"Sina={sina_error}; Eastmoney={eastmoney_error}"
+            ) from eastmoney_error
+
+    bars: list[DailyBar] = []
+    if frame is not None and not frame.empty:
+        for row in frame.itertuples(index=False):
+            row_date = datetime.fromisoformat(normalize_date(row.date)).date()
+            if row_date < start_date or row_date > end_date:
+                continue
+            amount = getattr(row, "amount", None)
+            bars.append(
+                DailyBar(
+                    date=row_date.isoformat(),
+                    open=float(row.open),
+                    high=float(row.high),
+                    low=float(row.low),
+                    close=float(row.close),
+                    volume=float(row.volume) / volume_divisor,
+                    amount=float(amount) if amount is not None else None,
+                )
+            )
+
+    if not bars:
+        raise RuntimeError(f"AKShare returned no daily data for {normalized_symbol}")
+    return bars
+
+
+def load_futu_daily(
+    symbol: str,
+    start: str,
+    end: str,
+    volume_divisor: float = 100_000_000.0,
+    host: str = "127.0.0.1",
+    port: int = 11111,
+) -> list[DailyBar]:
+    """Load unadjusted daily candlesticks through a locally running FutuOpenD."""
+    previous_appdata = os.environ.get("APPDATA")
+    if os.name == "nt":
+        runtime_dir = Path(__file__).resolve().parents[2] / ".runtime"
+        os.environ["APPDATA"] = str(runtime_dir)
+    try:
+        try:
+            from futu import AuType, KLType, OpenQuoteContext, RET_OK  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise RuntimeError(
+                "Futu OpenAPI is unavailable. Install it with: pip install futu-api"
+            ) from exc
+    finally:
+        if os.name == "nt":
+            if previous_appdata is None:
+                os.environ.pop("APPDATA", None)
+            else:
+                os.environ["APPDATA"] = previous_appdata
+
+    quote_context = OpenQuoteContext(host=host, port=port)
+    try:
+        page_key = None
+        bars: list[DailyBar] = []
+        while True:
+            ret, frame, next_page_key = quote_context.request_history_kline(
+                symbol,
+                start=start,
+                end=end,
+                ktype=KLType.K_DAY,
+                autype=AuType.NONE,
+                max_count=1000,
+                page_req_key=page_key,
+            )
+            if ret != RET_OK:
+                raise RuntimeError(f"Futu historical K-line request failed: {frame}")
+
+            for row in frame.itertuples(index=False):
+                turnover = getattr(row, "turnover", None)
+                bars.append(
+                    DailyBar(
+                        date=normalize_date(row.time_key),
+                        open=float(row.open),
+                        high=float(row.high),
+                        low=float(row.low),
+                        close=float(row.close),
+                        volume=float(row.volume) / volume_divisor,
+                        amount=float(turnover) if turnover is not None else None,
+                    )
+                )
+
+            if next_page_key is None:
+                break
+            page_key = next_page_key
+
+        return bars
+    finally:
+        quote_context.close()
 
 
 def load_tqsdk_daily(
