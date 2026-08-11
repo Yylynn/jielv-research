@@ -114,6 +114,8 @@ nav em { font-style: normal; font-size: 8px; padding: 2px 4px; border-radius: 8p
 .tooltip-head strong, .tooltip-head span { display: block; }
 .tooltip-head strong { font-family: ui-monospace, monospace; font-size: 11px; }
 .tooltip-head div span { margin-top: 3px; color: #70837b; font-size: 8px; }
+.tooltip-lock { display: inline-block; margin-left: 8px; padding: 1px 5px; border: 1px solid rgba(130, 149, 141, .28); border-radius: 8px; color: #71847c; font-style: normal; letter-spacing: .04em; }
+.tooltip-lock.active { border-color: rgba(207, 255, 93, .48); color: var(--acid); background: rgba(207, 255, 93, .07); }
 .tooltip-head > span { font-family: ui-monospace, monospace; font-size: 11px; }
 .quote-row { display: grid; grid-template-columns: repeat(4, 1fr); padding: 7px 13px; border-bottom: 1px solid var(--line); color: #8da098; font-family: ui-monospace, monospace; font-size: 8px; }
 .tooltip-panels { display: grid; grid-template-columns: 184px 1fr; min-height: 146px; }

@@ -166,6 +166,7 @@ function MarketChart({
   const [tooltip, setTooltip] = useState({ x: 0, y: 0 });
   const [activeDetail, setActiveDetail] = useState<DetailKey>("date");
   const [isDragging, setIsDragging] = useState(false);
+  const [isTooltipPinned, setIsTooltipPinned] = useState(false);
   const dragRef = useRef<{ startX: number; startEnd: number; moved: boolean } | null>(null);
   const tooltipIndexRef = useRef<number | null>(null);
 
@@ -375,7 +376,7 @@ function MarketChart({
       className={`chart-stage ${isDragging ? "dragging" : ""}`}
       ref={containerRef}
       onMouseLeave={() => {
-        if (!isDragging) {
+        if (!isDragging && !isTooltipPinned) {
           tooltipIndexRef.current = null;
           onSelect(null);
         }
@@ -393,6 +394,9 @@ function MarketChart({
         aria-label="沪深300日K线，可滚轮缩放、拖拽平移，移动鼠标查看行情与传统历法"
         onWheel={(event) => {
           event.preventDefault();
+          setIsTooltipPinned(false);
+          tooltipIndexRef.current = null;
+          onSelect(null);
           zoomAt(event.clientX, event.deltaY);
         }}
         onPointerDown={(event) => {
@@ -400,25 +404,31 @@ function MarketChart({
           event.currentTarget.setPointerCapture(event.pointerId);
           dragRef.current = { startX: event.clientX, startEnd: viewportEnd, moved: false };
           setIsDragging(true);
+          setIsTooltipPinned(false);
           tooltipIndexRef.current = null;
           onSelect(null);
         }}
         onPointerMove={(event) => {
           if (dragRef.current) panTo(event.clientX);
-          else locate(event.clientX, event.clientY);
+          else if (!isTooltipPinned) locate(event.clientX, event.clientY);
         }}
         onPointerUp={(event) => {
           const drag = dragRef.current;
           if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
           dragRef.current = null;
           setIsDragging(false);
-          if (drag && !drag.moved) locate(event.clientX, event.clientY);
+          if (drag && !drag.moved) {
+            locate(event.clientX, event.clientY);
+            setIsTooltipPinned(true);
+          }
         }}
         onPointerCancel={() => {
           dragRef.current = null;
           setIsDragging(false);
         }}
         onDoubleClick={() => {
+          setIsTooltipPinned(false);
+          tooltipIndexRef.current = null;
           onSelect(null);
           onResetView();
         }}
@@ -428,7 +438,12 @@ function MarketChart({
           <div className="tooltip-head">
             <div>
               <strong>{toIso(selected.date)}</strong>
-              <span>{WEEKDAYS[selected.date.getDay()]} · {GANZHI[selected.ganzhiIndex]}日</span>
+              <span>
+                {WEEKDAYS[selected.date.getDay()]} · {GANZHI[selected.ganzhiIndex]}日
+                <em className={isTooltipPinned ? "tooltip-lock active" : "tooltip-lock"}>
+                  {isTooltipPinned ? "已锁定" : "点击K线锁定"}
+                </em>
+              </span>
             </div>
             <span className={selected.close >= selected.open ? "quote-up" : "quote-down"}>
               {selected.close >= selected.open ? "+" : ""}{((selected.close / selected.open - 1) * 100).toFixed(2)}%
