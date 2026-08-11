@@ -167,6 +167,7 @@ function MarketChart({
   const [activeDetail, setActiveDetail] = useState<DetailKey>("date");
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startEnd: number; moved: boolean } | null>(null);
+  const tooltipIndexRef = useRef<number | null>(null);
 
   const startIndex = Math.max(0, viewportEnd - viewCount + 1);
   const visible = data.slice(startIndex, viewportEnd + 1);
@@ -296,11 +297,18 @@ function MarketChart({
     const plotWidth = bounds.width - 18 - 70;
     const rawIndex = Math.floor(((clientX - bounds.left - 18) / plotWidth) * visible.length);
     const localIndex = Math.max(0, Math.min(visible.length - 1, rawIndex));
-    onSelect(startIndex + localIndex);
-    setTooltip({
-      x: Math.min(Math.max(clientX - bounds.left + 14, 20), bounds.width - 510),
-      y: Math.min(Math.max(clientY - bounds.top + 14, 14), bounds.height - 260),
-    });
+    const nextIndex = startIndex + localIndex;
+    onSelect(nextIndex);
+
+    // Keep the tooltip still while the pointer moves from the candle into it.
+    // Reposition only when the user reaches a different candle.
+    if (tooltipIndexRef.current !== nextIndex) {
+      tooltipIndexRef.current = nextIndex;
+      setTooltip({
+        x: Math.min(Math.max(clientX - bounds.left + 14, 20), bounds.width - 510),
+        y: Math.min(Math.max(clientY - bounds.top + 14, 14), bounds.height - 260),
+      });
+    }
   };
 
   const zoomAt = (clientX: number, deltaY: number) => {
@@ -367,7 +375,10 @@ function MarketChart({
       className={`chart-stage ${isDragging ? "dragging" : ""}`}
       ref={containerRef}
       onMouseLeave={() => {
-        if (!isDragging) onSelect(null);
+        if (!isDragging) {
+          tooltipIndexRef.current = null;
+          onSelect(null);
+        }
       }}
       onKeyDown={(event) => {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -389,6 +400,7 @@ function MarketChart({
           event.currentTarget.setPointerCapture(event.pointerId);
           dragRef.current = { startX: event.clientX, startEnd: viewportEnd, moved: false };
           setIsDragging(true);
+          tooltipIndexRef.current = null;
           onSelect(null);
         }}
         onPointerMove={(event) => {
@@ -434,6 +446,7 @@ function MarketChart({
                   className={activeDetail === menu.key ? "active" : ""}
                   onMouseEnter={() => setActiveDetail(menu.key)}
                   onFocus={() => setActiveDetail(menu.key)}
+                  onClick={() => setActiveDetail(menu.key)}
                 >
                   {menu.label}<span>›</span>
                 </button>

@@ -109,7 +109,7 @@ nav em { font-style: normal; font-size: 8px; padding: 2px 4px; border-radius: 8p
 .chart-stage { min-height: 430px; position: relative; overflow: hidden; outline: none; }
 .chart-stage canvas { display: block; outline: none; cursor: crosshair; touch-action: none; user-select: none; }
 .chart-stage.dragging canvas { cursor: grabbing; }
-.market-tooltip { position: absolute; z-index: 12; width: 474px; border: 1px solid rgba(176, 199, 190, .24); background: rgba(7, 15, 13, .97); box-shadow: 0 16px 50px rgba(0, 0, 0, .5); backdrop-filter: blur(14px); }
+.market-tooltip { position: absolute; z-index: 12; width: 474px; pointer-events: auto; border: 1px solid rgba(176, 199, 190, .24); background: rgba(7, 15, 13, .97); box-shadow: 0 16px 50px rgba(0, 0, 0, .5); backdrop-filter: blur(14px); }
 .tooltip-head { display: flex; justify-content: space-between; align-items: center; padding: 11px 13px 9px; border-bottom: 1px solid var(--line); }
 .tooltip-head strong, .tooltip-head span { display: block; }
 .tooltip-head strong { font-family: ui-monospace, monospace; font-size: 11px; }
@@ -118,7 +118,7 @@ nav em { font-style: normal; font-size: 8px; padding: 2px 4px; border-radius: 8p
 .quote-row { display: grid; grid-template-columns: repeat(4, 1fr); padding: 7px 13px; border-bottom: 1px solid var(--line); color: #8da098; font-family: ui-monospace, monospace; font-size: 8px; }
 .tooltip-panels { display: grid; grid-template-columns: 184px 1fr; min-height: 146px; }
 .tooltip-menu { padding: 5px; border-right: 1px solid var(--line); }
-.tooltip-menu button { width: 100%; height: 27px; display: flex; justify-content: space-between; align-items: center; padding: 0 8px; border: 0; background: transparent; color: #82958d; font-size: 9px; text-align: left; cursor: default; }
+.tooltip-menu button { width: 100%; height: 27px; display: flex; justify-content: space-between; align-items: center; padding: 0 8px; border: 0; background: transparent; color: #82958d; font-size: 9px; text-align: left; cursor: pointer; }
 .tooltip-menu button.active { color: #e7f3ee; background: rgba(207, 255, 93, .08); }
 .tooltip-menu button span { color: #53665e; font-size: 14px; }
 .tooltip-detail { padding: 13px 15px; }
