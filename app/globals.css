@@ -30,7 +30,9 @@ nav button:not(:disabled) { cursor: pointer; }
 nav .nav-active { color: #ecf8f3; }
 nav .nav-active::after { content: ""; position: absolute; height: 2px; left: 0; right: 0; bottom: 0; background: var(--acid); box-shadow: 0 0 9px var(--acid); }
 nav em { font-style: normal; font-size: 8px; padding: 2px 4px; border-radius: 8px; background: #213028; color: #82958e; margin-left: 5px; }
-.top-actions { display: flex; gap: 10px; }
+.top-actions { display: flex; align-items: center; gap: 10px; }
+.developer-credit { margin-right: 4px; color: #52665e; font-family: ui-monospace, monospace; font-size: 8px; letter-spacing: .04em; white-space: nowrap; }
+.developer-credit strong { color: #9daf9f; font-weight: 500; }
 .icon-button, .avatar { width: 32px; height: 32px; border: 1px solid var(--line); background: #0b1714; border-radius: 50%; cursor: pointer; }
 .avatar { border-color: rgba(207, 255, 93, .28); background: rgba(207, 255, 93, .1); color: var(--acid); }
 

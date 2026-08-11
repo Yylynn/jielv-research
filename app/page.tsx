@@ -604,7 +604,11 @@ export default function Home() {
           <button disabled>策略回测 <em>即将上线</em></button>
           <button disabled>因子库</button>
         </nav>
-        <div className="top-actions"><button className="icon-button" aria-label="通知">○</button><button className="avatar">研</button></div>
+        <div className="top-actions">
+          <span className="developer-credit">Developed by <strong>Yylynn</strong></span>
+          <button className="icon-button" aria-label="通知">○</button>
+          <button className="avatar">研</button>
+        </div>
       </header>
 
       <section className="workspace">
