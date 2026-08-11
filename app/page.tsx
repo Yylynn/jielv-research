@@ -42,6 +42,27 @@ type RawMarketDataset = {
   }>;
 };
 
+type MarketSummary = {
+  id: string;
+  name: string;
+  displayCode: string;
+  badge: string;
+  file: string;
+  source: string;
+  volumeUnit: string;
+  latestDate: string;
+  latestClose: number;
+  changePct: number;
+};
+
+const FALLBACK_MARKETS: MarketSummary[] = [
+  { id: "sh000300", name: "沪深300", displayCode: "000300", badge: "CSI", file: "data/market_daily.json", source: "行情数据", volumeUnit: "亿", latestDate: "", latestClose: 5551.31, changePct: 0.26 },
+  { id: "sh000001", name: "上证指数", displayCode: "000001", badge: "SSE", file: "data/markets/sh000001.json", source: "行情数据", volumeUnit: "亿", latestDate: "", latestClose: 3647.21, changePct: 0.42 },
+  { id: "sz399001", name: "深证成指", displayCode: "399001", badge: "SZSE", file: "data/markets/sz399001.json", source: "行情数据", volumeUnit: "亿", latestDate: "", latestClose: 11218.09, changePct: -0.31 },
+  { id: "sh000905", name: "中证500", displayCode: "000905", badge: "CSI", file: "data/markets/sh000905.json", source: "行情数据", volumeUnit: "亿", latestDate: "", latestClose: 6017.54, changePct: 0.86 },
+  { id: "sz399006", name: "创业板指", displayCode: "399006", badge: "GEM", file: "data/markets/sz399006.json", source: "行情数据", volumeUnit: "亿", latestDate: "", latestClose: 2416.88, changePct: -0.17 },
+];
+
 type DetailKey = "date" | "pillars" | "elements" | "term" | "lunar";
 
 function toIso(date: Date) {
@@ -164,15 +185,33 @@ function normalizeMarketDataset(raw: RawMarketDataset, mode: "live" | "static"):
   };
 }
 
-async function loadMarketDataset(): Promise<MarketDataset> {
+async function loadMarketCatalog(): Promise<{ markets: MarketSummary[]; version: string }> {
+  const response = await fetch(`${import.meta.env.BASE_URL}data/markets/index.json`, { cache: "no-store" });
+  if (!response.ok) throw new Error("行情清单不可用");
+  const raw = await response.json() as { generatedAt?: string; markets?: MarketSummary[] };
+  const markets = (raw.markets ?? []).filter((item) => (
+    item.id && item.name && item.file
+    && Number.isFinite(Number(item.latestClose))
+    && Number.isFinite(Number(item.changePct))
+  ));
+  if (markets.length === 0) throw new Error("行情清单为空");
+  return { markets, version: raw.generatedAt ?? "" };
+}
+
+async function loadMarketDataset(
+  file = "data/market_daily.json",
+  allowLocalApi = false,
+  version = "",
+): Promise<MarketDataset> {
   const apiRoot = import.meta.env.VITE_MARKET_API_URL?.replace(/\/$/, "");
   const sources: Array<{ url: string; mode: "live" | "static" }> = [];
-  if (apiRoot) sources.push({ url: `${apiRoot}/api/market/daily`, mode: "live" });
-  sources.push({ url: `${import.meta.env.BASE_URL}data/market_daily.json`, mode: "static" });
+  if (apiRoot && allowLocalApi) sources.push({ url: `${apiRoot}/api/market/daily`, mode: "live" });
+  const cacheKey = version ? `?v=${encodeURIComponent(version)}` : "";
+  sources.push({ url: `${import.meta.env.BASE_URL}${file}${cacheKey}`, mode: "static" });
 
   for (const source of sources) {
     try {
-      const response = await fetch(source.url, { cache: source.mode === "live" ? "no-store" : "default" });
+      const response = await fetch(source.url, { cache: "no-store" });
       if (!response.ok) continue;
       return normalizeMarketDataset(await response.json() as RawMarketDataset, source.mode);
     } catch {
@@ -463,7 +502,7 @@ function MarketChart({
       <canvas
         ref={canvasRef}
         tabIndex={0}
-        aria-label="沪深300日K线，可滚轮缩放、拖拽平移，移动鼠标查看行情与传统历法"
+        aria-label="指数日K线，可滚轮缩放、拖拽平移，移动鼠标查看行情与传统历法"
         onWheel={(event) => {
           event.preventDefault();
           setIsTooltipPinned(false);
@@ -613,8 +652,11 @@ function MiniCalendar({
 }
 
 export default function Home() {
+  const [marketCatalog, setMarketCatalog] = useState<MarketSummary[]>(FALLBACK_MARKETS);
+  const [catalogVersion, setCatalogVersion] = useState("");
+  const [activeMarketId, setActiveMarketId] = useState("sh000300");
   const [market, setMarket] = useState<MarketDataset>(() => ({
-    symbol: "000300.SH",
+    symbol: "sh000300",
     name: "沪深300",
     source: "演示数据",
     volumeUnit: "亿",
@@ -634,11 +676,25 @@ export default function Home() {
 
   useEffect(() => {
     let cancelled = false;
-    loadMarketDataset().then((dataset) => {
-      if (!cancelled) setMarket(dataset);
+    loadMarketCatalog().then(({ markets, version }) => {
+      if (cancelled) return;
+      setMarketCatalog(markets);
+      setCatalogVersion(version);
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, []);
+
+  const activeMarket = marketCatalog.find((item) => item.id === activeMarketId)
+    ?? marketCatalog[0]
+    ?? FALLBACK_MARKETS[0];
+
+  useEffect(() => {
+    let cancelled = false;
+    loadMarketDataset(activeMarket.file, activeMarket.id === "sh000300", catalogVersion).then((dataset) => {
+      if (!cancelled) setMarket(dataset);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [activeMarket.file, activeMarket.id, catalogVersion]);
 
   useEffect(() => {
     setViewKey("1年");
@@ -713,16 +769,15 @@ export default function Home() {
           <div className="watch-head"><span>自选行情</span><button>＋</button></div>
           <label className="market-search"><span>⌕</span><input aria-label="搜索标的" placeholder="代码 / 名称" /></label>
           <div className="watch-tabs"><button className="active">指数</button><button>股票</button><button>期货</button></div>
-          {[
-            [market.name, market.symbol.replace(/\.(SH|SZ)$/i, ""), latest.close, change],
-            ["上证指数", "000001", 3647.21, 0.42],
-            ["深证成指", "399001", 11218.09, -0.31],
-            ["中证500", "000905", 6017.54, 0.86],
-            ["创业板指", "399006", 2416.88, -0.17],
-          ].map(([name, code, price, rate], index) => (
-            <button className={`watch-item ${index === 0 ? "selected" : ""}`} key={String(code)}>
-              <span><strong>{name}</strong><small>{code}</small></span>
-              <span className={Number(rate) >= 0 ? "quote-up" : "quote-down"}><strong>{Number(price).toFixed(2)}</strong><small>{Number(rate) >= 0 ? "+" : ""}{Number(rate).toFixed(2)}%</small></span>
+          {marketCatalog.map((item) => (
+            <button
+              className={`watch-item ${item.id === activeMarketId ? "selected" : ""}`}
+              key={item.id}
+              onClick={() => setActiveMarketId(item.id)}
+              aria-pressed={item.id === activeMarketId}
+            >
+              <span><strong>{item.name}</strong><small>{item.displayCode}</small></span>
+              <span className={item.changePct >= 0 ? "quote-up" : "quote-down"}><strong>{Number(item.latestClose).toFixed(2)}</strong><small>{item.changePct >= 0 ? "+" : ""}{Number(item.changePct).toFixed(2)}%</small></span>
             </button>
           ))}
           <div className="watch-note"><span>●</span><p>当前数据源：{market.source}<br />{market.mode === "live" ? "本机研究接口" : market.mode === "static" ? "每日静态行情" : "行情尚未导入"}</p></div>
@@ -730,7 +785,7 @@ export default function Home() {
 
         <section className="main-panel">
           <div className="instrument-row">
-            <div className="instrument-title"><span className="market-badge">CSI</span><div><h1>{market.name} <small>{market.symbol.replace(/\.(SH|SZ)$/i, "")}</small></h1><p>日线 · {market.mode === "live" ? "本机实时同步" : market.mode === "static" ? "每日更新" : "演示行情"} · {market.source}</p></div></div>
+            <div className="instrument-title"><span className="market-badge">{activeMarket.badge}</span><div><h1>{market.name} <small>{activeMarket.displayCode}</small></h1><p>日线 · {market.mode === "live" ? "本机实时同步" : market.mode === "static" ? "每日更新" : "演示行情"} · {market.source}</p></div></div>
             <div className="headline-quote"><strong className={change >= 0 ? "quote-up" : "quote-down"}>{latest.close.toFixed(2)}</strong><span className={change >= 0 ? "quote-up" : "quote-down"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span></div>
             <div className="ohlc"><span>开 <strong>{latest.open.toFixed(2)}</strong></span><span>高 <strong>{latest.high.toFixed(2)}</strong></span><span>低 <strong>{latest.low.toFixed(2)}</strong></span><span>量 <strong>{latest.volume.toFixed(1)}{market.volumeUnit}</strong></span></div>
           </div>
