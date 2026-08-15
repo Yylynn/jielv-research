@@ -30,9 +30,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: tools/market_data/requirements.txt
 
       - name: Install AKShare
-        run: python -m pip install akshare==1.18.84
+        run: python -m pip install -r tools/market_data/requirements.txt
 
       - name: Refresh index data
         run: python -m tools.market_data.update_indices --start 2015-01-01
